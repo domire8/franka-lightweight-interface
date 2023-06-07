@@ -1,4 +1,4 @@
-IMAGE_NAME=epfl-lasa/franka-lightweight-interface
+IMAGE_NAME=aica-technology/doosan-lightweight-interface
 IMAGE_TAG=runtime
 BUILD_FLAGS=()
 
@@ -24,11 +24,6 @@ done
 BUILD_FLAGS+=(--target "${IMAGE_TAG}")
 BUILD_FLAGS+=(-t "${IMAGE_NAME}":"${IMAGE_TAG}")
 
-docker pull ghcr.io/aica-technology/network-interfaces
 DOCKER_BUILDKIT=1 docker build "${BUILD_FLAGS[@]}" . || exit 1
 
-docker run -it --rm --privileged --cap-add=SYS_NICE \
-  --net=host \
-  --ulimit rtprio=99:99 \
-  --ulimit memlock=102400:102400 \
-  "${IMAGE_NAME}:${IMAGE_TAG}"
+docker run -it --rm --privileged --net=host "${IMAGE_NAME}:${IMAGE_TAG}"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-IMAGE_NAME=epfl-lasa/franka-lightweight-interface
+IMAGE_NAME=aica-technology/doosan-lightweight-interface
 IMAGE_STAGE=source-dependencies
-CONTAINER_NAME=franka-lightweight-interface-remote-development-ssh
+CONTAINER_NAME=doosan-lightweight-interface-remote-development-ssh
 
 SSH_PORT=1111
 SSH_KEY_FILE="$HOME/.ssh/id_rsa.pub"
@@ -47,7 +47,6 @@ BUILD_FLAGS+=(--target "${IMAGE_STAGE}")
 BUILD_FLAGS+=(-t "${IMAGE_NAME}":"${IMAGE_STAGE}")
 PUBLIC_KEY=$(cat "${SSH_KEY_FILE}")
 
-docker pull ghcr.io/aica-technology/network-interfaces
 DOCKER_BUILDKIT=1 docker build "${BUILD_FLAGS[@]}" . || exit 1
 
 COMMAND_FLAGS=()

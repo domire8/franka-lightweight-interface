@@ -128,7 +128,7 @@ automatically restarted to accept new commands.
 
 ## Examples
 
-See [here](source/franka_lightweight_interface/examples/README.md) for examples on how to use the interface to control
+See [here](source/doosan_lightweight_interface/examples/README.md) for examples on how to use the interface to control
 the robot.
 
 ## Authors / Maintainers
