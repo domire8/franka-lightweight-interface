@@ -23,12 +23,7 @@ find_package(Poco REQUIRED Foundation Net)
 
 include_directories(include)
 
-set(CORE_SOURCES
-	src/DoosanLightWeightInterface.cpp
-	src/main.cpp
-)
-
-add_executable(${PROJECT_NAME} ${CORE_SOURCES})
+add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_libraries(${PROJECT_NAME} cppzmq communication_interfaces clproto state_representation ${DOOSAN_LIB} Poco::Net Poco::Foundation)
 
 install(TARGETS ${PROJECT_NAME}
