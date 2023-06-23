@@ -11,6 +11,18 @@
 #include <clproto.hpp>
 #include <communication_interfaces/sockets/ZMQPublisherSubscriber.hpp>
 
+#include <ctime> /* clock_gettime() */
+#include <sys/mman.h> /* mlockall() */
+#include <sched.h> /* sched_setscheduler() */
+/** Task period in ns. */
+#define PERIOD_NS   (2000000) // period is 2ms
+
+#define MAX_SAFE_STACK (8 * 1024) /* The maximum stack size which is
+                                     guranteed safe to access without
+                                     faulting */
+#define NSEC_PER_SEC (1000000000)
+#define FREQUENCY (NSEC_PER_SEC / PERIOD_NS)
+
 #define DEG_2_RAD (M_PI / 180.0)
 #define RAD_2_DEG (180.0 / M_PI)
 
@@ -90,7 +102,7 @@ void on_monitoring_state(const ROBOT_STATE eState) {
     case STATE_NOT_READY:
       std::cout << "STATE_NOT_READY:" << std::endl;
       if (has_control_authority) {
-        drfl.SetRobotControl(CONTROL_INIT_CONFIG);
+        drfl.set_robot_control(CONTROL_INIT_CONFIG);
       }
     default:
       break;
@@ -162,6 +174,12 @@ void on_disconnected() {
   }
 }
 
+void stack_prefault(void) {
+  unsigned char dummy[MAX_SAFE_STACK];
+
+  memset(dummy, 0, MAX_SAFE_STACK);
+}
+
 int main(int argc, char** argv) {
   sockets.open();
 
@@ -173,6 +191,15 @@ int main(int argc, char** argv) {
 
   drfl.set_on_program_stopped(on_program_stopped);
   drfl.set_on_disconnected(on_disconnected);
+
+//  float Cog[3] = {0, -38.63, 98.980};
+//  float inertia[6] = {0, 0, 0, 0, 0, 0};
+//  assert(drfl.add_tool("tool", 1.850f, Cog, inertia));
+//  assert(drfl.set_tool("tool"));
+//
+//  float tcp[6] = {0, 0, 0.185, 0, 0, 0};
+//  assert(drfl.add_tcp("tcp", tcp));
+//  assert(drfl.set_tcp("tcp"));
 
   assert(drfl.open_connection("192.168.137.100"));
 
@@ -200,39 +227,92 @@ int main(int argc, char** argv) {
   assert(drfl.start_rt_control());
   std::cout << "rt started" << std::endl;
 
+  state_representation::JointState command, buffered_command;
+
   float tau_d[NUMBER_OF_JOINT] = {0.0,};
   float acc[NUMBER_OF_JOINT] = {-10000, -10000, -10000, -10000, -10000, -10000};
   drfl.set_safety_mode(SAFETY_MODE_AUTONOMOUS, SAFETY_MODE_EVENT_MOVE);
-  while (true) {
+
+  /* Set priority */
+  struct sched_param param = {};
+  param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+
+  printf("Using priority %i.\n", param.sched_priority);
+  if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+    perror("sched_setscheduler failed");
+  }
+
+  /* Lock memory */
+
+  if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
+    fprintf(stderr, "Warning: Failed to lock memory: %s\n", strerror(errno));
+  }
+
+  stack_prefault();
+
+  printf("Starting RT task with dt=%u ns.\n", PERIOD_NS);
+
+  struct timespec wakeup_time;
+  clock_gettime(CLOCK_MONOTONIC, &wakeup_time);
+  wakeup_time.tv_sec += 1; /* start in future */
+  wakeup_time.tv_nsec = 0;
+
+  int ret = 0;
+  bool end_cyclic_task = false;
+  bool ignore_interrupt = false;
+  while (!end_cyclic_task) {
+    ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeup_time, nullptr);
+    if (ret && !(ret == EINTR && ignore_interrupt)) {
+      fprintf(stderr, "clock_nanosleep(): %s\n", strerror(ret));
+      return ret;
+    }
+
     std::string msg;
+    clproto::MessageType command_type;
     if (sockets.receive_bytes(msg)) {
-      state_representation::JointVelocities command;
-      if (clproto::decode(msg, command)) {
-        for (int i = 0; i < NUMBER_OF_JOINT; ++i) {
-          tau_d[i] = RAD_2_DEG * command.get_velocity(i);
-        }
-      drfl.speedj_rt(tau_d, acc, 0.5);
+      command_type = clproto::check_message_type(msg);
+      switch (command_type) {
+        case clproto::MessageType::JOINT_VELOCITIES_MESSAGE:
+          command = clproto::decode<state_representation::JointVelocities>(msg);
+          buffered_command = command;
+          break;
+        case clproto::MessageType::JOINT_TORQUES_MESSAGE:
+          command = clproto::decode<state_representation::JointTorques>(msg);
+          buffered_command = command;
+          break;
+        default:
+          std::cout << "unsupported message type" << std::endl;
+          return 1;
       }
     }
-//    if (sockets.receive_bytes(msg)) {
-//      state_representation::JointTorques command;
-//      if (clproto::decode(msg, command)) {
-//        std::cerr << command << std::endl;
-//        std::cerr << command + joint_state << std::endl;
-//        for (int i = 0; i < NUMBER_OF_JOINT; ++i) {
-//          tau_d[i] = 5 * command.get_torque(i) + joint_state.get_torque(i);
-////          tau_d[i] = command.get_torque(i);
-//        }
-//        drfl.torque_rt(tau_d, 0.002);
-//      }
-//    }
-//    else if (joint_state) {
-//      for (int i = 0; i < NUMBER_OF_JOINT; ++i) {
-//        tau_d[i] = joint_state.get_torque(i);
-//      }
-//      drfl.torque_rt(tau_d, 0.0);
-//      this_thread::sleep_for(std::chrono::microseconds(10));
-//    }
+    if (command && command.get_age() > 0.01) {
+      buffered_command *= 0.1;
+    }
+    if (buffered_command) {
+      switch (command_type) {
+        case clproto::MessageType::JOINT_VELOCITIES_MESSAGE:
+          for (int i = 0; i < NUMBER_OF_JOINT; ++i) {
+            tau_d[i] = RAD_2_DEG * buffered_command.get_velocity(i);
+          }
+          drfl.speedj_rt(tau_d, acc, 0.01);
+          break;
+        case clproto::MessageType::JOINT_TORQUES_MESSAGE:
+          for (int i = 0; i < NUMBER_OF_JOINT; ++i) {
+            tau_d[i] = joint_state.get_torque(i) + buffered_command.get_torque(i);
+          }
+          drfl.torque_rt(tau_d, 0.01);
+          break;
+        default:
+          std::cout << "unsupported message type" << std::endl;
+          return 1;
+      }
+    }
+
+    wakeup_time.tv_nsec += PERIOD_NS;
+    while (wakeup_time.tv_nsec >= NSEC_PER_SEC) {
+      wakeup_time.tv_nsec -= NSEC_PER_SEC;
+      wakeup_time.tv_sec++;
+    }
   }
 
   drfl.close_connection();

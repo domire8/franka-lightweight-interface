@@ -26,4 +26,8 @@ BUILD_FLAGS+=(-t "${IMAGE_NAME}":"${IMAGE_TAG}")
 
 DOCKER_BUILDKIT=1 docker build "${BUILD_FLAGS[@]}" . || exit 1
 
-docker run -it --rm --privileged --net=host "${IMAGE_NAME}:${IMAGE_TAG}"
+docker run -it --rm --privileged --cap-add=SYS_NICE \
+  --net=host \
+  --ulimit rtprio=99:99 \
+  --ulimit memlock=102400:102400 \
+  "${IMAGE_NAME}:${IMAGE_TAG}"
