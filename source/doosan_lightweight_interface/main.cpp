@@ -21,7 +21,6 @@
                                      guranteed safe to access without
                                      faulting */
 #define NSEC_PER_SEC (1000000000)
-#define FREQUENCY (NSEC_PER_SEC / PERIOD_NS)
 
 #define DEG_2_RAD (M_PI / 180.0)
 #define RAD_2_DEG (180.0 / M_PI)
@@ -140,7 +139,6 @@ void on_log_alarm(LPLOG_ALARM tLog) {
 }
 
 void on_rt_monitoring_data(LPRT_OUTPUT_DATA_LIST tData) {
-  static int td = 0;
   for (int i = 0; i < NUMBER_OF_JOINT; ++i) {
     joint_state.set_position(DEG_2_RAD * tData->actual_joint_position[i], i);
     joint_state.set_velocity(DEG_2_RAD * tData->actual_joint_velocity[i], i);
@@ -149,6 +147,7 @@ void on_rt_monitoring_data(LPRT_OUTPUT_DATA_LIST tData) {
   auto message = clproto::encode(joint_state);
   sockets.send_bytes(message);
 
+//  static int td = 0;
 //  if (td++ == 1000) {
 //    td = 0;
 //    printf("timestamp : %.3f\n", tData->time_stamp);
@@ -180,7 +179,7 @@ void stack_prefault(void) {
   memset(dummy, 0, MAX_SAFE_STACK);
 }
 
-int main(int argc, char** argv) {
+int main(int, char**) {
   sockets.open();
 
   drfl.set_on_monitoring_state(on_monitoring_state);

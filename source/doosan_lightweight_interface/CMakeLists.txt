@@ -14,7 +14,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   	add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-find_package(cppzmq REQUIRED)
 find_package(communication_interfaces REQUIRED)
 find_package(control_libraries 7.0.0 REQUIRED COMPONENTS state_representation)
 find_package(clproto 7.0.0 REQUIRED)
@@ -23,8 +22,8 @@ find_package(Poco REQUIRED Foundation Net)
 
 include_directories(include)
 
-add_executable(${PROJECT_NAME} src/main.cpp)
-target_link_libraries(${PROJECT_NAME} cppzmq communication_interfaces clproto state_representation ${DOOSAN_LIB} Poco::Net Poco::Foundation)
+add_executable(${PROJECT_NAME} main.cpp)
+target_link_libraries(${PROJECT_NAME} communication_interfaces clproto state_representation ${DOOSAN_LIB} Poco::Net Poco::Foundation)
 
 install(TARGETS ${PROJECT_NAME}
 		RUNTIME DESTINATION bin
